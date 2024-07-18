@@ -1,0 +1,104 @@
+---
+- name: Install Nginx and Keepalived
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - nginx
+    - keepalived
+    - python3-certbot-nginx
+
+- name: Configure Keepalived
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: restart keepalived
+
+- name: Install SMB client
+  ansible.builtin.apt:
+    name: cifs-utils
+    state: present
+
+- name: Create mount point for SMB share
+  ansible.builtin.file:
+    path: "{{ smb_lb_mount_point }}"
+    state: directory
+
+- name: Mount SMB share
+  ansible.posix.mount:
+    src: "{{ smb_lb_share }}"
+    path: "{{ smb_lb_mount_point }}"
+    fstype: cifs
+    opts: username={{ smb_username }},password={{ smb_password }},rw,mfsymlinks,nosharesock,echo_interval=5,nopersistenthandles
+    state: mounted
+    boot: true
+
+- name: Check current letsencrypt file type
+  ansible.builtin.stat:
+    path: "{{ letsencrypt_dir }}"
+  register: letsencrypt_path
+
+- name: Remove the directory (only if it is a folder)
+  ansible.builtin.file:
+    path: "{{ letsencrypt_dir }}"
+    state: absent
+  when: letsencrypt_path.stat.isdir is defined and letsencrypt_path.stat.isdir
+
+- name: Create symbolic link to letsencrypt directory
+  ansible.builtin.file:
+    src: "{{ smb_lb_mount_point }}/letsencrypt"
+    dest: "{{ letsencrypt_dir }}"
+    state: link
+    force: true
+
+- name: Check current nginx.conf file type
+  ansible.builtin.stat:
+    path: "{{ nginx_conf }}"
+  register: nginx_conf_path
+
+- name: Remove the file (only if it is not a symlink)
+  ansible.builtin.file:
+    path: "{{ nginx_conf }}"
+    state: absent
+  when: not nginx_conf_path.stat.islnk
+
+- name: Create symbolic link to nginx.conf
+  ansible.builtin.file:
+    src: "{{ smb_lb_mount_point }}/nginx/nginx.conf"
+    dest: "{{ nginx_conf }}"
+    state: link
+    force: true
+
+- name: Configure Nginx
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ smb_lb_mount_point }}/nginx/nginx.conf"
+  notify: restart nginx
+  run_once: true
+
+- name: Ensure Keepalived is running
+  ansible.builtin.service:
+    name: keepalived
+    state: started
+    enabled: true
+
+- name: Force all notified handlers to run at this point, not waiting for normal sync points
+  ansible.builtin.meta: flush_handlers
+
+- name: Install Certbot
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+
+- name: Obtain SSL certificates
+  ansible.builtin.command: >
+    certbot --nginx -d {{ https_cert_domain }} --non-interactive --agree-tos --email {{ https_cert_email }}
+  notify: restart nginx
+  when: ansible_distribution_version is version('9', '>=')
+  run_once: true
+
+- name: Ensure Nginx is running and reloaded
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+    enabled: true

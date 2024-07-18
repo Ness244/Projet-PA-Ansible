@@ -1,0 +1,30 @@
+---
+- name: Perform common configuration
+  vars_files:
+    - vars.yml
+  vars:
+    ansible_ssh_user: runner
+  become: true
+  hosts: '*'
+  roles:
+    - common
+
+- name: Deploy web servers configuration
+  vars_files:
+    - vars.yml
+  vars:
+    ansible_ssh_user: runner
+  become: true
+  hosts: 'web_servers'
+  roles:
+    - web_server
+
+- name: Deploy load balancer configuration
+  vars_files:
+    - vars.yml
+  vars:
+    ansible_ssh_user: runner
+  become: true
+  hosts: 'load_balancers'
+  roles:
+    - load_balancer

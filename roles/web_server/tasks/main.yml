@@ -1,0 +1,65 @@
+---
+# tasks file for web_server
+
+- name: Install Apache2 and PHP
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - apache2
+    - libapache2-mod-php
+    - php
+
+- name: Enable necessary Apache modules
+  ansible.builtin.apache2_module:
+    state: present
+    name: "{{ item }}"
+    ignore_configcheck: true
+  register: result
+  failed_when: result.rc | default(0) != 0 and 'already enabled' not in (result.stdout | default(''))
+  with_items:
+    - php8.2
+    - rewrite
+
+- name: Install SMB client
+  ansible.builtin.apt:
+    name: cifs-utils
+    state: present
+
+- name: Create mount point for SMB share
+  ansible.builtin.file:
+    path: "{{ smb_mount_point }}"
+    state: directory
+
+- name: Mount SMB share
+  ansible.posix.mount:
+    src: "{{ smb_share }}"
+    path: "{{ smb_mount_point }}"
+    fstype: cifs
+    opts: username={{ smb_username }},password={{ smb_password }},rw,mfsymlinks,nosharesock,echo_interval=5,nopersistenthandles
+    state: mounted
+    boot: true
+
+- name: Check current web data directory
+  ansible.builtin.stat:
+    path: "{{ web_data_directory }}"
+  register: web_data_path
+
+- name: remove the folder (only if it is a folder)
+  ansible.builtin.file:
+    path: "{{ web_data_directory }}"
+    state: absent
+  when: web_data_path.stat.isdir is defined and web_data_path.stat.isdir
+
+- name: Create symbolic link to web data directory
+  ansible.builtin.file:
+    src: "{{ smb_mount_point }}"
+    dest: "{{ web_data_directory }}"
+    state: link
+    force: true
+
+- name: Ensure Apache is running
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: true
