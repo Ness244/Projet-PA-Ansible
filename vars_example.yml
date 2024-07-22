@@ -9,7 +9,7 @@ web_data_directory: /var/www/html
 smb_share: "//srv-files.intranet.alphacorporate.cloud/www-data"
 smb_mount_point: /mnt/www-data
 smb_username: webservices@intranet.alphacorporate.cloud
-smb_password: Ghy483$*
+smb_password: 'somepasswd'
 
 # Load Balancer configuration
 smb_lb_share: "//srv-files.intranet.alphacorporate.cloud/loadbalancer"
